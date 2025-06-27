@@ -28,7 +28,11 @@ st.markdown(f"Parsed function: ${latex(func_expr)}$")
 
 # Determine strategy
 def is_linear(expr):
-    return expr.is_Add and all(term.is_Mul or term.is_Symbol for term in expr.args)
+    """Check if expr is strictly of the form a*x + b*y"""
+    coeff_x = expr.coeff(x)
+    coeff_y = expr.coeff(y)
+    residual = expr - coeff_x * x - coeff_y * y
+    return residual == 0 and (coeff_x != 0 or coeff_y != 0)
 
 use_min = func_expr.has(Min)
 use_linear = is_linear(func_expr)
@@ -50,6 +54,7 @@ if use_min:
     y_func = lambdify((px, py, m), y_sol, "numpy")
 
 elif use_linear:
+    # Extract coefficients
     a = func_expr.coeff(x)
     b = func_expr.coeff(y)
 
@@ -59,10 +64,12 @@ elif use_linear:
     def y_func(px_val, py_val, m_val):
         return np.where((a / px_val) >= (b / py_val), 0.0, m_val / py_val)
 
-    x_sol = m / px if (a / px) >= (b / py) else 0
-    y_sol = 0 if (a / px) >= (b / py) else m / py
-
+    # Symbolic expressions for display purposes
+    x_sol = Piecewise((m / px, (a / px) >= (b / py)), (0, True))
+    y_sol = Piecewise((0, (a / px) >= (b / py)), (m / py, True))
+    
 else:
+    # General case - Lagrangian Method
     lam = symbols('lambda')
     L = func_expr - lam * (px * x + py * y - m)
     eq1 = Eq(diff(L, x), 0)
