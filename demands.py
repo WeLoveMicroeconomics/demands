@@ -43,11 +43,10 @@ x_sol = simplify(sol[x])
 y_sol = simplify(sol[y])
 
 # --- Detect negative-prone solutions and clip ---
-def make_piecewise(var_sol, var_name):
-    # If the solution is of the form expr1 - expr2, clip at zero
+def make_piecewise(var_sol):
     expr = simplify(var_sol)
     try:
-        # Only clip if it depends on parameters
+        # Clip at zero if it depends on parameters
         if expr.has(px, py, m):
             return Piecewise((expr, expr >= 0), (0, True))
         else:
@@ -55,10 +54,10 @@ def make_piecewise(var_sol, var_name):
     except Exception:
         return expr
 
-y_piece = make_piecewise(y_sol, 'y')
+y_piece = make_piecewise(y_sol)
 
-# Update x accordingly
-x_piece = Piecewise((x_sol, y_piece.args[0].expr >= 0), (m/px, True))
+# Update x accordingly: if y=0 then x = m/px
+x_piece = Piecewise((x_sol, y_piece >= 0), (m/px, True))
 
 # Lambdify
 x_func = lambdify((px, py, m), x_piece, 'numpy')
