@@ -82,12 +82,18 @@ else:
         st.error("No symbolic solution found. Try a different function or parameters.")
         st.stop()
 
-    # Filter feasible solutions
+    # Filter feasible solutions safely
     feasible = []
     for sol in solutions:
         x_val = sol[x]
         y_val = sol[y]
-        if x_val.is_real and y_val.is_real and x_val >= 0 and y_val >= 0:
+
+        if (
+            (x_val.is_real is True or x_val.is_real is None)
+            and (y_val.is_real is True or y_val.is_real is None)
+            and (x_val.is_nonnegative is True or x_val.is_nonnegative is None)
+            and (y_val.is_nonnegative is True or y_val.is_nonnegative is None)
+        ):
             feasible.append(sol)
 
     if not feasible:
