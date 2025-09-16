@@ -133,11 +133,8 @@ else:
     cand_y_call = []
     cand_obj_call = []
     for xs, ys in candidates:
-        # objective expression with substitution
         obj_expr = func_expr.subs({x: xs, y: ys})
-        # If obj_expr still depends on x or y, mark as invalid (skip numerics)
         if set(obj_expr.free_symbols) & {x, y}:
-            # we won't use this candidate numerically
             cand_x_call.append(None)
             cand_y_call.append(None)
             cand_obj_call.append(None)
@@ -153,37 +150,28 @@ else:
 
     # numeric selector: choose best feasible candidate for given numeric px,py,m
     def choose_candidate(px_val, py_val, m_val):
-        # accept scalar values only; callers will vectorize if passed arrays
         best_val = -np.inf
         best_xy = (np.nan, np.nan)
-        for i, (xs_call, ys_call, obj_call) in enumerate(zip(cand_x_call, cand_y_call, cand_obj_call)):
+        for xs_call, ys_call, obj_call in zip(cand_x_call, cand_y_call, cand_obj_call):
             if xs_call is None or ys_call is None or obj_call is None:
                 continue
             try:
                 xv = xs_call(px_val, py_val, m_val)
                 yv = ys_call(px_val, py_val, m_val)
                 ov = obj_call(px_val, py_val, m_val)
-                # unify numpy / python scalar
-                xv = np.asarray(xv).reshape(-1)[0].item() if np.asarray(xv).size > 0 else float(xv)
-                yv = np.asarray(yv).reshape(-1)[0].item() if np.asarray(yv).size > 0 else float(yv)
-                ov = np.asarray(ov).reshape(-1)[0].item() if np.asarray(ov).size > 0 else float(ov)
+                xv = float(np.asarray(xv).reshape(-1)[0])
+                yv = float(np.asarray(yv).reshape(-1)[0])
+                ov = float(np.asarray(ov).reshape(-1)[0])
             except Exception:
                 continue
-            # feasibility: nonnegative and real
-            if not np.isfinite(xv) or not np.isfinite(yv):
-                continue
-            # small tolerance for numerical noise
             tol = 1e-9
             if (xv >= -tol) and (yv >= -tol):
-                # clip small negative round-off to zero
                 xv = max(xv, 0.0)
                 yv = max(yv, 0.0)
                 if ov > best_val:
                     best_val = ov
                     best_xy = (xv, yv)
-        # If no candidate selected (rare if px,py,m positive), fallback to corners explicitly
         if not np.isfinite(best_xy[0]) or not np.isfinite(best_xy[1]):
-            # fallback to x=m/px, y=0 or x=0,y=m/py whichever feasible and larger
             try:
                 xc = float(m_val / px_val)
                 yc = 0.0
@@ -202,37 +190,32 @@ else:
                 return (xc2, yc2)
         return best_xy
 
-    # vectorized x_func and y_func that accept scalar or numpy arrays
     def x_func(px_val, py_val, m_val):
-        arr_px = np.asarray(px_val)
-        arr_py = np.asarray(py_val)
-        arr_m = np.asarray(m_val)
-        # broadcasting rules: flatten parameter arrays to 1d of same length
+        arr_px, arr_py, arr_m = map(np.asarray, (px_val, py_val, m_val))
         if arr_px.shape == arr_py.shape == arr_m.shape and arr_px.ndim >= 1:
-            n = arr_px.size
-            out = np.empty(n, dtype=float)
-            for i in range(n):
-                xi, _ = choose_candidate(float(arr_px.reshape(-1)[i]), float(arr_py.reshape(-1)[i]), float(arr_m.reshape(-1)[i]))
+            out = np.empty(arr_px.size, dtype=float)
+            for i in range(arr_px.size):
+                xi, _ = choose_candidate(float(arr_px.flat[i]),
+                                         float(arr_py.flat[i]),
+                                         float(arr_m.flat[i]))
                 out[i] = xi
             return out.reshape(arr_px.shape)
         else:
-            # scalar or mixed shapes: treat as scalar
-            xi, _ = choose_candidate(float(np.asarray(px_val)), float(np.asarray(py_val)), float(np.asarray(m_val)))
+            xi, _ = choose_candidate(float(arr_px), float(arr_py), float(arr_m))
             return xi
 
     def y_func(px_val, py_val, m_val):
-        arr_px = np.asarray(px_val)
-        arr_py = np.asarray(py_val)
-        arr_m = np.asarray(m_val)
+        arr_px, arr_py, arr_m = map(np.asarray, (px_val, py_val, m_val))
         if arr_px.shape == arr_py.shape == arr_m.shape and arr_px.ndim >= 1:
-            n = arr_px.size
-            out = np.empty(n, dtype=float)
-            for i in range(n):
-                _, yi = choose_candidate(float(arr_px.reshape(-1)[i]), float(arr_py.reshape(-1)[i]), float(arr_m.reshape(-1)[i]))
+            out = np.empty(arr_px.size, dtype=float)
+            for i in range(arr_px.size):
+                _, yi = choose_candidate(float(arr_px.flat[i]),
+                                         float(arr_py.flat[i]),
+                                         float(arr_m.flat[i]))
                 out[i] = yi
             return out.reshape(arr_px.shape)
         else:
-            _, yi = choose_candidate(float(np.asarray(px_val)), float(np.asarray(py_val)), float(np.asarray(m_val)))
+            _, yi = choose_candidate(float(arr_px), float(arr_py), float(arr_m))
             return yi
 
 
@@ -241,19 +224,58 @@ st.markdown("### Symbolic candidate solutions (interior + corners)")
 for i, (xs_sym, ys_sym) in enumerate(symbolic_candidates):
     st.latex(f"\\text{{cand}}_{{{i}}}:\\quad x = {latex(simplify(xs_sym))},\\; y = {latex(simplify(ys_sym))}")
 
-st.markdown("_(Numeric selection chooses, for each numeric (px,py,m), the feasible candidate with highest objective)_")
+st.markdown("_(Numeric selection chooses, for each numeric (px,py,m), the feasible candidate with highest objective.)_")
 
-# Let user test a specific numeric triple to see which solution is chosen
+# Let user test a specific numeric triple
 st.markdown("### Evaluate chosen solution at specific parameters")
 px_test = st.number_input("px (test)", value=1.0)
 py_test = st.number_input("py (test)", value=1.0)
 m_test = st.number_input("m (test)", value=1.0)
 
-# compute numeric chosen solution for the test triple
 try:
     x_chosen = float(x_func(px_test, py_test, m_test))
     y_chosen = float(y_func(px_test, py_test, m_test))
     st.write(f"Chosen numeric solution at (px={px_test}, py={py_test}, m={m_test}):")
     st.latex(f"x^* = {x_chosen:.12g},\\quad y^* = {y_chosen:.12g}")
     try:
-        f_val =_
+        f_val = float(func_expr.subs({x: x_chosen, y: y_chosen}))
+        st.latex(f"f^* = {f_val:.12g}")
+    except Exception:
+        pass
+except Exception as e:
+    st.error(f"Failed to evaluate numeric candidate selection: {e}")
+
+# --- Parameter sweep plot ---
+param_to_vary = st.selectbox("Select parameter to vary:", ("px", "py", "m"))
+fixed_params = {}
+for param in ('px', 'py', 'm'):
+    if param != param_to_vary:
+        val = st.number_input(f"Value for {param} (fixed):", value=1.0)
+        fixed_params[param] = float(val)
+
+var_to_plot = st.selectbox("Select variable to plot:", ("x", "y"))
+param_vals = np.linspace(0.1, 10, 200)
+
+vals = []
+for v in param_vals:
+    args = []
+    for p in ('px', 'py', 'm'):
+        args.append(v if p == param_to_vary else fixed_params[p])
+    try:
+        val = x_func(*args) if var_to_plot == "x" else y_func(*args)
+        if isinstance(val, np.ndarray):
+            val = np.asarray(val).reshape(-1)[0] if val.size > 0 else np.nan
+        if not np.isfinite(val) or np.iscomplex(val) or val < 0:
+            val = np.nan
+    except Exception:
+        val = np.nan
+    vals.append(val)
+
+fig, ax = plt.subplots()
+ax.plot(vals, param_vals, label=var_to_plot)
+ax.set_xlabel(var_to_plot)
+ax.set_ylabel(param_to_vary)
+ax.set_title(f"{param_to_vary} vs {var_to_plot}")
+ax.legend()
+ax.grid(True)
+st.pyplot(fig)
