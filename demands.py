@@ -69,19 +69,37 @@ elif use_linear:
     y_sol = Piecewise((0, (a / px) >= (b / py)), (m / py, True))
     
 else:
-    # General case - Lagrangian Method
-    lam = symbols('lambda')
+    # General nonlinear case - Lagrangian Method
+    lam = symbols('lambda', real=True)
     L = func_expr - lam * (px * x + py * y - m)
     eq1 = Eq(diff(L, x), 0)
     eq2 = Eq(diff(L, y), 0)
     eq3 = Eq(px * x + py * y, m)
+
     solutions = solve([eq1, eq2, eq3], (x, y, lam), dict=True)
+
     if not solutions:
-        st.error("No symbolic solution found.")
+        st.error("No symbolic solution found. Try a different function or parameters.")
         st.stop()
-    sol = solutions[0]
-    x_sol = sol[x]
-    y_sol = sol[y]
+
+    # Filter feasible solutions
+    feasible = []
+    for sol in solutions:
+        x_val = sol[x]
+        y_val = sol[y]
+        if x_val.is_real and y_val.is_real and x_val >= 0 and y_val >= 0:
+            feasible.append(sol)
+
+    if not feasible:
+        st.error("No feasible (real, nonnegative) solutions found.")
+        st.stop()
+
+    # Pick the solution that maximizes the objective
+    best_sol = max(feasible, key=lambda s: func_expr.subs(s))
+
+    x_sol = best_sol[x]
+    y_sol = best_sol[y]
+
     x_func = lambdify((px, py, m), x_sol, "numpy")
     y_func = lambdify((px, py, m), y_sol, "numpy")
 
