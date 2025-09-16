@@ -34,21 +34,17 @@ except SympifyError as e:
 
 st.markdown(f"Parsed function: ${latex(func_expr)}$")
 
-
 # --- Helper: improved linear detection ---
 def is_linear(expr):
     try:
         if expr.has(Min):
             return False
-        # Only treat polynomial total-degree <= 1 as linear here
         return expr.is_polynomial(x, y) and (expr.as_poly(x, y).total_degree() <= 1)
     except Exception:
         return False
 
-
 use_min = func_expr.has(Min)
 use_linear = is_linear(func_expr)
-
 
 if use_min:
     # --- handle Min(...) robustly ---
@@ -92,7 +88,6 @@ else:
     fx = diff(func_expr, x)
     fy = diff(func_expr, y)
 
-    # First-order condition ratio: fx/px = fy/py  -> fx*py - fy*px = 0
     eqA = Eq(fx * py - fy * px, 0)
     eqB = Eq(px * x + py * y - m, 0)
 
@@ -102,20 +97,18 @@ else:
         sols = []
 
     candidates = []
-    # collect interior symbolic solutions if RHS doesn't contain x or y
     for sol in sols:
         xs = simplify(sol.get(x, None))
         ys = simplify(sol.get(y, None))
         if xs is None or ys is None:
             continue
-        # skip self-referential solutions where xs or ys still contain x or y
         if (set(xs.free_symbols) & {x, y}) or (set(ys.free_symbols) & {x, y}):
             continue
         candidates.append((xs, ys))
 
     # always include boundary corners
-    candidates.append((simplify(0), simplify(m / py)))   # x=0, y=m/py
-    candidates.append((simplify(m / px), simplify(0)))   # x=m/px, y=0
+    candidates.append((simplify(0), simplify(m / py)))
+    candidates.append((simplify(m / px), simplify(0)))
 
     # de-duplicate
     unique = []
@@ -128,7 +121,7 @@ else:
     candidates = unique
     symbolic_candidates = candidates
 
-    # Precompute lambdified callables for each candidate (x,y) and their objective
+    # Precompute lambdified callables for each candidate
     cand_x_call = []
     cand_y_call = []
     cand_obj_call = []
@@ -148,7 +141,6 @@ else:
             cand_y_call.append(None)
             cand_obj_call.append(None)
 
-    # numeric selector: choose best feasible candidate for given numeric px,py,m
     def choose_candidate(px_val, py_val, m_val):
         best_val = -np.inf
         best_xy = (np.nan, np.nan)
@@ -156,38 +148,34 @@ else:
             if xs_call is None or ys_call is None or obj_call is None:
                 continue
             try:
-                xv = xs_call(px_val, py_val, m_val)
-                yv = ys_call(px_val, py_val, m_val)
-                ov = obj_call(px_val, py_val, m_val)
-                xv = float(np.asarray(xv).reshape(-1)[0])
-                yv = float(np.asarray(yv).reshape(-1)[0])
-                ov = float(np.asarray(ov).reshape(-1)[0])
+                xv = float(np.asarray(xs_call(px_val, py_val, m_val)).reshape(-1)[0])
+                yv = float(np.asarray(ys_call(px_val, py_val, m_val)).reshape(-1)[0])
+                ov = float(np.asarray(obj_call(px_val, py_val, m_val)).reshape(-1)[0])
             except Exception:
                 continue
             tol = 1e-9
-            if (xv >= -tol) and (yv >= -tol):
+            if xv >= -tol and yv >= -tol:
                 xv = max(xv, 0.0)
                 yv = max(yv, 0.0)
                 if ov > best_val:
                     best_val = ov
                     best_xy = (xv, yv)
         if not np.isfinite(best_xy[0]) or not np.isfinite(best_xy[1]):
+            # fallback to corners
             try:
-                xc = float(m_val / px_val)
-                yc = 0.0
+                xc, yc = float(m_val / px_val), 0.0
                 valc = float(func_expr.subs({x: xc, y: yc}))
             except Exception:
                 valc = -np.inf
             try:
-                xc2 = 0.0
-                yc2 = float(m_val / py_val)
+                xc2, yc2 = 0.0, float(m_val / py_val)
                 valc2 = float(func_expr.subs({x: xc2, y: yc2}))
             except Exception:
                 valc2 = -np.inf
             if valc >= valc2:
-                return (xc, yc)
+                return xc, yc
             else:
-                return (xc2, yc2)
+                return xc2, yc2
         return best_xy
 
     def x_func(px_val, py_val, m_val):
@@ -218,15 +206,12 @@ else:
             _, yi = choose_candidate(float(arr_px), float(arr_py), float(arr_m))
             return yi
 
-
-# --- Display symbolic candidate list for transparency ---
+# --- Display symbolic candidate list ---
 st.markdown("### Symbolic candidate solutions (interior + corners)")
 for i, (xs_sym, ys_sym) in enumerate(symbolic_candidates):
     st.latex(f"\\text{{cand}}_{{{i}}}:\\quad x = {latex(simplify(xs_sym))},\\; y = {latex(simplify(ys_sym))}")
 
-st.markdown("_(Numeric selection chooses, for each numeric (px,py,m), the feasible candidate with highest objective.)_")
-
-# Let user test a specific numeric triple
+# --- Evaluate chosen solution at specific parameters ---
 st.markdown("### Evaluate chosen solution at specific parameters")
 px_test = st.number_input("px (test)", value=1.0)
 py_test = st.number_input("py (test)", value=1.0)
